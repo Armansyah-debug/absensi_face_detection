@@ -1,0 +1,45 @@
+name: absensi_face_detection
+description: App Absensi Wajah dengan Firebase Firestore - Manual Nama + NPM, Lokasi GPS, Izin/Cuti/Sakit, Riwayat Hapus Swipe.
+
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.1.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Core Flutter packages
+  camera: ^0.10.6
+  google_mlkit_face_detection: ^0.11.0
+  intl: ^0.19.0
+
+  # Lokasi GPS
+  geolocator: ^12.0.0
+  geocoding: ^3.0.0
+
+  # Firebase (Backend Cloud)
+  firebase_core: ^3.6.0
+  cloud_firestore: ^5.4.4
+
+  # UI Icons
+  cupertino_icons: ^1.0.2
+  firebase_storage: ^12.4.10
+  path_provider: ^2.1.5
+  path: ^1.9.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^2.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/models/
+
+  # No custom fonts needed
