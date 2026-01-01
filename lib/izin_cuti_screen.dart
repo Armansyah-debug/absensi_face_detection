@@ -23,13 +23,16 @@ class _IzinCutiScreenState extends State<IzinCutiScreen> {
     final DateTime? picked = await showDatePicker(
       context: context,
       initialDate: isMulai ? _mulai : _akhir,
-      firstDate: DateTime(2025),
-      lastDate: DateTime(2026),
+      firstDate: DateTime.now(),
+      lastDate:
+          DateTime.now().add(const Duration(days: 730)),
     );
     if (picked != null) {
       setState(() {
-        if (isMulai) _mulai = picked;
-        else _akhir = picked;
+        if (isMulai)
+          _mulai = picked;
+        else
+          _akhir = picked;
       });
     }
   }
@@ -62,11 +65,17 @@ class _IzinCutiScreenState extends State<IzinCutiScreen> {
         child: ListView(
           padding: const EdgeInsets.all(20),
           children: [
-            TextFormField(controller: _nameController, decoration: const InputDecoration(labelText: 'Nama')),
-            TextFormField(controller: _npmController, decoration: const InputDecoration(labelText: 'NPM')),
+            TextFormField(
+                controller: _nameController,
+                decoration: const InputDecoration(labelText: 'Nama')),
+            TextFormField(
+                controller: _npmController,
+                decoration: const InputDecoration(labelText: 'NPM')),
             DropdownButtonFormField<String>(
               value: _jenis,
-              items: ['Izin', 'Cuti', 'Sakit'].map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
+              items: ['Izin', 'Cuti', 'Sakit']
+                  .map((e) => DropdownMenuItem(value: e, child: Text(e)))
+                  .toList(),
               onChanged: (v) => setState(() => _jenis = v!),
             ),
             const SizedBox(height: 20),
@@ -80,11 +89,15 @@ class _IzinCutiScreenState extends State<IzinCutiScreen> {
               trailing: const Icon(Icons.calendar_today),
               onTap: () => _selectDate(context, false),
             ),
-            TextFormField(controller: _alasanController, decoration: const InputDecoration(labelText: 'Alasan')),
+            TextFormField(
+                controller: _alasanController,
+                decoration: const InputDecoration(labelText: 'Alasan')),
             const SizedBox(height: 30),
             ElevatedButton(
               onPressed: _isLoading ? null : _submit,
-              child: _isLoading ? const CircularProgressIndicator() : const Text('Kirim Pengajuan'),
+              child: _isLoading
+                  ? const CircularProgressIndicator()
+                  : const Text('Kirim Pengajuan'),
             )
           ],
         ),

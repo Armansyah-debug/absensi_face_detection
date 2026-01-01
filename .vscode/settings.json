@@ -1,4 +1,5 @@
 {
   "dart.flutterSdkPath": ".fvm/versions/3.22.2",
-  "java.configuration.updateBuildConfiguration": "interactive"
+  "java.configuration.updateBuildConfiguration": "interactive",
+  "cmake.sourceDirectory": "C:/Unilam/Application/project/absensi_face_detection/linux"
 }
