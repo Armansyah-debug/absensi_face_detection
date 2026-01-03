@@ -1,4 +1,5 @@
 import 'dart:io';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 
@@ -10,7 +11,7 @@ class FirestoreService {
   static CollectionReference get absenCollection => _firestore.collection('absen');
   static CollectionReference get izinCutiCollection => _firestore.collection('izin_cuti');
 
-  // Upload Foto ke Storage
+  // Upload Foto Selfie ke Storage
   static Future<String> uploadSelfie(File imageFile, String npm) async {
     try {
       String fileName = 'selfie_${npm}_${DateTime.now().millisecondsSinceEpoch}.jpg';
@@ -19,30 +20,30 @@ class FirestoreService {
       TaskSnapshot snapshot = await uploadTask;
       return await snapshot.ref.getDownloadURL();
     } catch (e) {
-      print("Error Upload Storage: $e");
-      return '';
+      print("Error Upload Selfie: $e");
+      return '';  // Kalo error, return empty string
     }
   }
 
-  // Insert Absen (Pastikan parameter photoUrl ada)
+  // Insert Absen (dengan photoUrl)
   static Future<void> insertAbsen({
     required String name,
     required String npm,
     required String location,
     required String address,
-    required String photoUrl,
+    String photoUrl = '',  // Default empty kalo gak ada foto
   }) async {
     await absenCollection.add({
       'name': name,
       'npm': npm,
-      'timestamp': FieldValue.serverTimestamp(),
       'location': location,
       'address': address,
       'photo_url': photoUrl,
+      'timestamp': FieldValue.serverTimestamp(),
     });
   }
 
-  // Insert Izin
+  // Insert Izin/Cuti/Sakit
   static Future<void> insertIzinCuti({
     required String name,
     required String npm,
@@ -62,7 +63,7 @@ class FirestoreService {
     });
   }
 
-  // Fungsi Query untuk Riwayat (Stream)
+  // Stream untuk Riwayat Realtime
   static Stream<QuerySnapshot> getAllAbsen() {
     return absenCollection.orderBy('timestamp', descending: true).snapshots();
   }
@@ -71,7 +72,7 @@ class FirestoreService {
     return izinCutiCollection.orderBy('timestamp', descending: true).snapshots();
   }
 
-  // Fungsi Hapus
+  // Hapus Data
   static Future<void> deleteAbsen(String docId) async {
     await absenCollection.doc(docId).delete();
   }

@@ -1,10 +1,9 @@
-import 'dart:io';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
+import 'package:intl/intl.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
-
 import 'services/firestore_service.dart';
 
 class AbsenScreen extends StatefulWidget {
@@ -16,21 +15,14 @@ class AbsenScreen extends StatefulWidget {
 
 class _AbsenScreenState extends State<AbsenScreen> {
   CameraController? _controller;
-  late Future<void> _initializeControllerFuture;
+  Future<void>? _initializeControllerFuture;
 
   final FaceDetector _faceDetector = FaceDetector(
-    options: FaceDetectorOptions(
-      performanceMode: FaceDetectorMode.accurate,
-      enableClassification: true,
-      enableLandmarks: true,
-    ),
+    options: FaceDetectorOptions(performanceMode: FaceDetectorMode.accurate),
   );
 
-  final TextEditingController _nameController = TextEditingController();
-  final TextEditingController _npmController = TextEditingController();
-
   bool _isProcessing = false;
-  String _message = 'Arahkan wajah ke kamera & tekan Absen';
+  String _message = 'Memuat kamera...';
 
   @override
   void initState() {
@@ -39,131 +31,133 @@ class _AbsenScreenState extends State<AbsenScreen> {
   }
 
   Future<void> _initializeCamera() async {
-    final cameras = await availableCameras();
-    final frontCamera = cameras.firstWhere(
-      (camera) => camera.lensDirection == CameraLensDirection.front,
-      orElse: () => cameras.first,
-    );
+    try {
+      final cameras = await availableCameras();
+      final frontCamera = cameras.firstWhere(
+        (camera) => camera.lensDirection == CameraLensDirection.front,
+        orElse: () => cameras.first,
+      );
 
-    _controller = CameraController(frontCamera, ResolutionPreset.high);
-    _initializeControllerFuture = _controller!.initialize().then((_) {
+      _controller = CameraController(frontCamera, ResolutionPreset.high);
+      _initializeControllerFuture = _controller!.initialize();
+
+      await _initializeControllerFuture;
+
       if (mounted) {
-        setState(() => _message = 'Siap absen! Tekan tombol di bawah');
+        setState(() => _message = 'Arahkan wajah & tekan absen');
       }
-    }).catchError((e) {
-      if (mounted) setState(() => _message = 'Error camera: $e');
-    });
+    } catch (e) {
+      if (mounted) {
+        setState(() => _message = 'Gagal memuat kamera: $e');
+      }
+    }
   }
 
-  Future<Map<String, String>> _getLocationAndAddress() async {
-    // Cek GPS nyala
+  Future<Map<String, String>> _getLocationInfo() async {
     bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) throw 'GPS mati. Nyalakan GPS di pengaturan HP.';
+    if (!serviceEnabled) throw 'GPS mati. Nyalakan GPS.';
 
-    // Cek izin
     LocationPermission permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied) {
-        throw 'Izin lokasi ditolak.';
-      }
+      if (permission == LocationPermission.denied) throw 'Izin lokasi ditolak.';
     }
-    if (permission == LocationPermission.deniedForever) {
-      throw 'Izin lokasi ditolak permanen. Aktifkan di Settings.';
-    }
+    if (permission == LocationPermission.deniedForever) throw 'Izin lokasi ditolak permanen.';
 
-    // Ambil posisi
-    Position position = await Geolocator.getCurrentPosition(
-      desiredAccuracy: LocationAccuracy.high,
-    );
+    Position position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
 
-    // ANTI FAKE GPS
-    if (position.isMocked) {
-      throw 'Fake GPS terdeteksi! Absen ditolak. Matikan aplikasi fake location.';
-    }
+    if (position.isMocked) throw 'Fake GPS terdeteksi! Absen ditolak.';
 
-    // Optional: Tolak kalau akurasi jelek
-    if (position.accuracy > 20) {
-      throw 'Akurasi lokasi kurang bagus (${position.accuracy.toStringAsFixed(0)}m). Cari sinyal lebih baik.';
-    }
-
-    // Geocoding alamat
-    List<Placemark> placemarks = await placemarkFromCoordinates(
-      position.latitude,
-      position.longitude,
-    );
+    List<Placemark> placemarks = await placemarkFromCoordinates(position.latitude, position.longitude);
     Placemark place = placemarks[0];
-    String address = [
-      place.subLocality,
-      place.locality,
-      place.administrativeArea,
-      place.country,
-    ].where((e) => e != null && e.isNotEmpty).join(', ');
+    String address = '${place.subLocality ?? ''}, ${place.locality ?? ''}, ${place.administrativeArea ?? ''}'.trim();
+    if (address.startsWith(',') || address.endsWith(',')) address = address.replaceAll(',', '').trim();
 
     return {
-      'location': '${position.latitude},${position.longitude}',
+      'location': '${position.latitude}, ${position.longitude}',
       'address': address.isEmpty ? 'Lokasi tidak diketahui' : address,
     };
   }
 
-  Future<void> _processAbsen() async {
-    if (_nameController.text.trim().isEmpty || _npmController.text.trim().isEmpty) {
-      _showSnackBar('Nama dan NPM wajib diisi!');
-      return;
-    }
-
+  Future<void> _processImage() async {
+    if (_isProcessing || !mounted) return;
     setState(() => _isProcessing = true);
 
     try {
-      // 1. Ambil lokasi + anti fake GPS
-      final locationData = await _getLocationAndAddress();
-
-      // 2. Ambil foto
-      final XFile photo = await _controller!.takePicture();
-
-      // 3. Deteksi wajah
-      final inputImage = InputImage.fromFilePath(photo.path);
+      final XFile image = await _controller!.takePicture();
+      final inputImage = InputImage.fromFilePath(image.path);
       final faces = await _faceDetector.processImage(inputImage);
 
-      if (faces.isEmpty) throw 'Wajah tidak terdeteksi! Pastikan wajah terlihat jelas.';
+      if (faces.isEmpty) throw 'Wajah tidak terdeteksi. Coba lagi';
 
-      // 4. Upload foto ke Firebase Storage
-      final String photoUrl = await FirestoreService.uploadSelfie(
-        File(photo.path),
-        _npmController.text.trim(),
+      final nameController = TextEditingController();
+      final npmController = TextEditingController();
+
+      final result = await showDialog<Map<String, String>>(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          title: const Text('Masukkan Data Absen'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameController,
+                decoration: const InputDecoration(hintText: 'Nama Lengkap'),
+                autofocus: true,
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: npmController,
+                decoration: const InputDecoration(hintText: 'NPM'),
+                keyboardType: TextInputType.number,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Batal')),
+            ElevatedButton(
+              onPressed: () {
+                final name = nameController.text.trim();
+                final npm = npmController.text.trim();
+                if (name.isNotEmpty && npm.isNotEmpty) {
+                  Navigator.pop(context, {'name': name, 'npm': npm});
+                }
+              },
+              child: const Text('Absen'),
+            ),
+          ],
+        ),
       );
 
-      // 5. Simpan data ke Firestore
+      if (result == null) {
+        setState(() => _message = 'Absen dibatalkan');
+        _isProcessing = false;
+        return;
+      }
+
+      final locationInfo = await _getLocationInfo();
       await FirestoreService.insertAbsen(
-        name: _nameController.text.trim(),
-        npm: _npmController.text.trim(),
-        location: locationData['location']!,
-        address: locationData['address']!,
-        photoUrl: photoUrl,
+        name: result['name']!,
+        npm: result['npm']!,
+        location: locationInfo['location']!,
+        address: locationInfo['address']!,
       );
 
-      _showSnackBar('Absen berhasil!');
-      if (mounted) Navigator.pop(context);
+      setState(() {
+        _message = '${result['name']} (${result['npm']}) absen berhasil!\n${DateFormat('dd MMM yyyy HH:mm').format(DateTime.now())}\nLokasi: ${locationInfo['address']}';
+      });
     } catch (e) {
-      _showSnackBar(e.toString());
-    } finally {
-      if (mounted) setState(() => _isProcessing = false);
+      setState(() => _message = 'Error: $e');
     }
-  }
 
-  void _showSnackBar(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg)),
-    );
+    setState(() => _isProcessing = false);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Absen Selfie'),
-        centerTitle: true,
-      ),
+      appBar: AppBar(title: const Text('Absen Wajah')),
       body: FutureBuilder<void>(
         future: _initializeControllerFuture,
         builder: (context, snapshot) {
@@ -192,55 +186,26 @@ class _AbsenScreenState extends State<AbsenScreen> {
                     ),
                   ),
                 ),
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  color: Colors.black.withOpacity(0.7),
+                  child: Text(_message, style: const TextStyle(color: Colors.white, fontSize: 18), textAlign: TextAlign.center),
+                ),
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Text(
-                    _message,
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w500),
-                    textAlign: TextAlign.center,
+                  padding: const EdgeInsets.all(20),
+                  child: ElevatedButton(
+                    onPressed: _isProcessing ? null : _processImage,
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 18),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    ),
+                    child: Text(_isProcessing ? 'Memproses...' : 'Absen Sekarang', style: const TextStyle(fontSize: 22)),
                   ),
                 ),
-                const SizedBox(height: 20),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Column(
-                    children: [
-                      TextField(
-                        controller: _nameController,
-                        decoration: const InputDecoration(
-                          labelText: 'Nama Lengkap',
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: _npmController,
-                        decoration: const InputDecoration(
-                          labelText: 'NPM',
-                          border: OutlineInputBorder(),
-                        ),
-                        keyboardType: TextInputType.number,
-                      ),
-                      const SizedBox(height: 30),
-                      SizedBox(
-                        width: double.infinity,
-                        height: 56,
-                        child: ElevatedButton(
-                          onPressed: _isProcessing ? null : _processAbsen,
-                          style: ElevatedButton.styleFrom(
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                          ),
-                          child: _isProcessing
-                              ? const CircularProgressIndicator(color: Colors.white)
-                              : const Text('Absen Sekarang', style: TextStyle(fontSize: 18)),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 30),
               ],
             );
+          } else if (snapshot.hasError) {
+            return Center(child: Text('Error: ${snapshot.error}'));
           } else {
             return const Center(child: CircularProgressIndicator());
           }
